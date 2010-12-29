@@ -424,6 +424,47 @@ static void find_canonical(struct ares_gaicb *cb)
 }
 
 /**
+ * Attempt to resolve the ar_service member as a number.
+**/
+static void try_serv_strtol(struct ares_gaicb *cb)
+{
+	long val;
+	char *endp;
+	struct ares_addrinfo *ai;
+
+	val = strtol(cb->ar_service, &endp, 0);
+
+	if (endp != cb->ar_service + strlen(cb->ar_service)) {
+		/* Not a numeric port. */
+		next_state(cb);
+		return;
+	}
+
+	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
+		/* TODO(tommie): Are overflow checks necessary here? */
+		switch (ai->ai_family) {
+		case AF_INET:
+			((struct sockaddr_in*) ai->ai_addr)->sin_port = htons(val);
+			break;
+
+		case AF_INET6:
+			((struct sockaddr_in6*) ai->ai_addr)->sin6_port = htons(val);
+			break;
+
+		default:
+			/* Should not happen unless our own code is bad. */
+			cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
+			free_gaicb(cb);
+			return;
+		}
+	}
+
+	/* No need to look up service. */
+	CLEAR_BITS(cb->ar_state, ARES_GAICB_SERV);
+	next_state(cb);
+}
+
+/**
  * Evaluate the state of the request, and perform the next step.
  *
  * The last step is (ares_gaicb.ar_state == 0) and is where the callback
@@ -476,6 +517,12 @@ static void next_state(struct ares_gaicb *cb)
 	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_CANONICAL)) {
 		CLEAR_BITS(cb->ar_state, ARES_GAICB_CANONICAL);
 		find_canonical(cb);
+		return;
+	}
+
+	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_NUMERIC_SERV)) {
+		CLEAR_BITS(cb->ar_state, ARES_GAICB_NUMERIC_SERV);
+		try_serv_strtol(cb);
 		return;
 	}
 

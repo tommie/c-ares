@@ -259,6 +259,53 @@ TEST(agai_numeric_canonical)
 	ares_destroy(channel);
 }
 
+
+static void agai_numeric_service_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
+{
+	ASSERT_EQUALS(status, ARES_SUCCESS);
+	ASSERT_EQUALS(timeouts, 0);
+	ASSERT(result);
+	ASSERT_EQUALS(result->ai_addrlen, sizeof(struct sockaddr_in));
+	ASSERT(result->ai_addr);
+	ASSERT_EQUALS(result->ai_addr->sa_family, AF_INET);
+	ASSERT_EQUALS(((struct sockaddr_in*) result->ai_addr)->sin_port, htons(42));
+	(*((int*) arg))++;
+}
+
+TEST(agai_numeric_service)
+{
+	ares_channel channel;
+	struct ares_addrinfo hints;
+	int callbacks = 0;
+
+	ASSERT(!ares_init(&channel));
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_flags = ARES_AI_NUMERICSERV;
+	ares_getaddrinfo(channel, NULL, "42", &hints, agai_numeric_service_callback, &callbacks);
+	ASSERT_EQUALS(callbacks, 1);
+	ares_destroy(channel);
+}
+
+static void agai_nonnumeric_service_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
+{
+	ASSERT_EQUALS(status, ARES_EFORMERR);
+	(*((int*) arg))++;
+}
+
+TEST(agai_nonnumeric_service)
+{
+	ares_channel channel;
+	struct ares_addrinfo hints;
+	int callbacks = 0;
+
+	ASSERT(!ares_init(&channel));
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_flags = ARES_AI_NUMERICSERV;
+	ares_getaddrinfo(channel, NULL, "echo", &hints, agai_nonnumeric_service_callback, &callbacks);
+	ASSERT_EQUALS(callbacks, 1);
+	ares_destroy(channel);
+}
+
 int main(int argc, char **argv)
 {
 	struct test_context ctx;
@@ -272,6 +319,9 @@ int main(int argc, char **argv)
 	RUN_TEST(agai_localhost);
 	RUN_TEST(agai_canonical);
 	RUN_TEST(agai_numeric_canonical);
+
+	RUN_TEST(agai_numeric_service);
+	RUN_TEST(agai_nonnumeric_service);
 
 	test_context = NULL;
 
