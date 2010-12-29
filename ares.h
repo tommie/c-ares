@@ -186,6 +186,8 @@ extern "C" {
 #define ARES_AI_IDN_USE_STD3_ASCII_RULES (1 << 12)
 #define ARES_AI_CANONIDN                (1 << 13)
 
+#define ARES_AI_DEFAULT (ARES_AI_V4MAPPED | ARES_AI_ADDRCONFIG)
+
 #define ARES_AI_MASK (ARES_AI_CANONNAME|ARES_AI_NUMERICHOST|ARES_AI_PASSIVE| \
                       ARES_AI_NUMERICSERV|ARES_AI_V4MAPPED|ARES_AI_ALL| \
                       ARES_AI_ADDRCONFIG)
@@ -267,11 +269,27 @@ struct ares_channeldata;
 
 typedef struct ares_channeldata *ares_channel;
 
+struct ares_addrinfo {
+	int                   ai_flags;
+	int                   ai_family;
+	int                   ai_socktype;
+	int                   ai_protocol;
+	size_t                ai_addrlen;
+	struct sockaddr      *ai_addr;
+	char                 *ai_canonname;
+	struct ares_addrinfo *ai_next;
+};
+
 typedef void (*ares_callback)(void *arg,
                               int status,
                               int timeouts,
                               unsigned char *abuf,
                               int alen);
+
+typedef void (*ares_addrinfo_callback)(void *arg,
+                                       int status,
+                                       int timeouts,
+                                       struct ares_addrinfo *result);
 
 typedef void (*ares_host_callback)(void *arg,
                                    int status,
@@ -350,6 +368,13 @@ CARES_EXTERN void ares_search(ares_channel channel,
                               int type,
                               ares_callback callback,
                               void *arg);
+
+CARES_EXTERN void ares_getaddrinfo(ares_channel channel,
+                                   const char *name,
+                                   const char *service,
+                                   const struct ares_addrinfo *hints,
+                                   ares_addrinfo_callback callback,
+                                   void *arg);
 
 CARES_EXTERN void ares_gethostbyname(ares_channel channel,
                                      const char *name,
