@@ -21,16 +21,20 @@
 
 
 /* --- Macros --- */
+#define ARE_ANY_BITS_SET(x, mask) ((x) & (mask))
 #define ARE_BITS_SET(x, mask) (((x) & (mask)) == (mask))
 #define CLEAR_BITS(x, mask) ((x) &= ~(mask))
 
 /* Bit masks for ares_gaicb.ar_state */
 #define ARES_GAICB_SERV               (1u << 0u) /* The service must be looked up */
 #define ARES_GAICB_NUMERIC_SERV       (1u << 1u) /* The service may be a numeric port */
-#define ARES_GAICB_HOST               (1u << 2u) /* The host address must be looked up */
+#define ARES_GAICB_HOST_INET          (1u << 2u) /* The AF_INET address must be looked up */
 #define ARES_GAICB_NUMERIC_HOST_INET  (1u << 3u) /* The host name may be a numeric AF_INET address */
 #define ARES_GAICB_NUMERIC_HOST_INET6 (1u << 4u) /* The host name may be a numeric AF_INET6 address */
 #define ARES_GAICB_CANONICAL          (1u << 5u) /* The canonical name must be looked up */
+#define ARES_GAICB_HOST_INET6         (1u << 6u) /* The AF_INET6 address must be looked up */
+
+#define ARES_GAICB_ANY_HOST (ARES_GAICB_HOST_INET | ARES_GAICB_HOST_INET6 | ARES_GAICB_NUMERIC_HOST_INET | ARES_GAICB_NUMERIC_HOST_INET6)
 
 
 /* --- Types --- */
@@ -72,6 +76,70 @@ const struct ares_addrinfo DEFAULT_HINTS = {
 
 
 /**
+ * Construct a new ares_addrinfo object and assign it the given
+ * AF_INET address.
+ *
+ * The sockaddr_in.sin_port member is set to zero.
+ *
+ * @param template the template addrinfo object to copy.
+ * @param addr the address to fill in.
+ * @return a malloc()d object, suitable for ares_freeaddrinfo(),
+ *         or NULL on error.
+**/
+static struct ares_addrinfo* create_addrinfo_inet(const struct ares_addrinfo *template, const struct in_addr *addr)
+{
+	struct sockaddr_in *sa;
+	struct ares_addrinfo *result = malloc(sizeof(*result) + sizeof(*sa));
+
+	if (!result) return NULL;
+
+	*result = *template;
+	result->ai_family = AF_INET;
+	result->ai_addrlen = sizeof(*sa);
+	result->ai_addr = (struct sockaddr*) (result + 1);
+
+	sa = (struct sockaddr_in*) result->ai_addr;
+
+	memset(sa, 0, sizeof(*sa));
+	sa->sin_family = AF_INET;
+	sa->sin_addr = *addr;
+
+	return result;
+}
+
+/**
+ * Construct a new ares_addrinfo object and assign it the given
+ * AF_INET6 address.
+ *
+ * The sockaddr_in6.sin6_port member is set to zero.
+ *
+ * @param template the template addrinfo object to copy.
+ * @param addr the address to fill in.
+ * @return a malloc()d object, suitable for ares_freeaddrinfo(),
+ *         or NULL on error.
+**/
+static struct ares_addrinfo* create_addrinfo_inet6(const struct ares_addrinfo *template, const struct in6_addr *addr)
+{
+	struct sockaddr_in6 *sa;
+	struct ares_addrinfo *result = malloc(sizeof(*result) + sizeof(*sa));
+
+	if (!result) return NULL;
+
+	*result = *template;
+	result->ai_family = AF_INET6;
+	result->ai_addrlen = sizeof(*sa);
+	result->ai_addr = (struct sockaddr*) (result + 1);
+
+	sa = (struct sockaddr_in6*) result->ai_addr;
+
+	memset(sa, 0, sizeof(*sa));
+	sa->sin6_family = AF_INET6;
+	sa->sin6_addr = *addr;
+
+	return result;
+}
+
+/**
  * Free the given ares_addrinfo object and it's members.
  *
  * Each object is free()d.
@@ -109,7 +177,6 @@ static void try_pton_inet(struct ares_gaicb *cb)
 {
 	struct in_addr addr;
 	struct ares_addrinfo *result;
-	struct sockaddr_in *sa;
 
 	if (!cb->ar_node) {
 		if (ARE_BITS_SET(cb->ar_hints.ai_flags, ARES_AI_PASSIVE))
@@ -123,7 +190,7 @@ static void try_pton_inet(struct ares_gaicb *cb)
 	}
 
 	/* Owned by cb after this function returns. */
-	result = malloc(sizeof(*result) + sizeof(*sa));
+	result = create_addrinfo_inet(&cb->ar_hints, &addr);
 
 	if (!result) {
 		cb->ar_callback(cb->ar_arg, ARES_ENOMEM, 0, NULL);
@@ -131,22 +198,11 @@ static void try_pton_inet(struct ares_gaicb *cb)
 		return;
 	}
 
-	*result = cb->ar_hints;
-	result->ai_family = AF_INET;
-	result->ai_addrlen = sizeof(*sa);
-	result->ai_addr = result + 1;
-
-	sa = (struct sockaddr_in*) result->ai_addr;
-
-	memset(sa, 0, sizeof(*sa));
-	sa->sin_family = AF_INET;
-	sa->sin_addr = addr;
-
 	/* Add to the result linked list. */
 	result->ai_next = cb->ar_result;
 	cb->ar_result = result;
 
-	CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST);
+	CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET | ARES_GAICB_HOST_INET6);
 	next_state(cb);
 }
 
@@ -160,7 +216,6 @@ static void try_pton_inet6(struct ares_gaicb *cb)
 {
 	struct in6_addr addr;
 	struct ares_addrinfo *result;
-	struct sockaddr_in6 *sa;
 
 	if (!cb->ar_node) {
 		if (ARE_BITS_SET(cb->ar_hints.ai_flags, ARES_AI_PASSIVE))
@@ -176,7 +231,7 @@ static void try_pton_inet6(struct ares_gaicb *cb)
 	}
 
 	/* Owned by cb after this function returns. */
-	result = malloc(sizeof(*result));
+	result = create_addrinfo_inet6(&cb->ar_hints, &addr);
 
 	if (!result) {
 		cb->ar_callback(cb->ar_arg, ARES_ENOMEM, 0, NULL);
@@ -184,22 +239,86 @@ static void try_pton_inet6(struct ares_gaicb *cb)
 		return;
 	}
 
-	*result = cb->ar_hints;
-	result->ai_family = AF_INET6;
-	result->ai_addrlen = sizeof(*sa);
-	result->ai_addr = result + 1;
-
-	sa = (struct sockaddr_in6*) result->ai_addr;
-
-	memset(sa, 0, sizeof(*sa));
-	sa->sin6_family = AF_INET6;
-	sa->sin6_addr = addr;
-
 	/* Add to the result linked list. */
 	result->ai_next = cb->ar_result;
 	cb->ar_result = result;
 
-	CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST);
+	CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET | ARES_GAICB_HOST_INET6);
+	next_state(cb);
+}
+
+/**
+ * Callback for all resolve_host_*() functions.
+ *
+ * Populates the ares_gaicb.ar_result with node information,
+ * and calls next_state() on success.
+ *
+ * @param arg the ares_gaicb object.
+**/
+static void host_callback(void *arg, int status, int timeouts, struct hostent *hostent)
+{
+	struct ares_gaicb *cb = arg;
+	char **addr;
+
+	cb->ar_timeouts += timeouts;
+
+	if (status != ARES_SUCCESS) {
+		if (ARE_ANY_BITS_SET(cb->ar_state, ARES_GAICB_ANY_HOST)) {
+			/* There is still a possibility of getting a host lookup. */
+			next_state(cb);
+			return;
+		}
+
+		/* This was the last attempt. Fail. */
+		cb->ar_callback(cb->ar_arg, status, cb->ar_timeouts, NULL);
+		free_gaicb(cb);
+		return;
+	}
+
+	switch (hostent->h_addrtype) {
+	case AF_INET:
+		for (addr = hostent->h_addr_list; *addr; ++addr) {
+			struct ares_addrinfo *result = create_addrinfo_inet(&cb->ar_hints, (struct in_addr*) *addr);
+
+			if (!result) {
+				cb->ar_callback(cb->ar_arg, ARES_ENOMEM, cb->ar_timeouts, NULL);
+				free_gaicb(cb);
+				return;
+			}
+
+			/* Add to result list. */
+			result->ai_next = cb->ar_result;
+			cb->ar_result = result;
+		}
+
+		/* Since ares_gethostbyname() returns AF_INET addresses
+		 * even for AF_INET6 queries, we may end up in this case
+		 * when we asked for AF_INET6, so there is no reason for us
+		 * to query AF_INET specifically.
+		 */
+		CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET);
+		break;
+
+	case AF_INET6:
+		for (addr = hostent->h_addr_list; *addr; ++addr) {
+			struct ares_addrinfo *result = create_addrinfo_inet6(&cb->ar_hints, (struct in6_addr*) *addr);
+
+			if (!result) {
+				cb->ar_callback(cb->ar_arg, ARES_ENOMEM, cb->ar_timeouts, NULL);
+				free_gaicb(cb);
+				return;
+			}
+
+			/* Add to result list. */
+			result->ai_next = cb->ar_result;
+			cb->ar_result = result;
+		}
+
+		/* For symmetry with the above. */
+		CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET6);
+		break;
+	}
+
 	next_state(cb);
 }
 
@@ -208,19 +327,19 @@ static void try_pton_inet6(struct ares_gaicb *cb)
  *
  * We are reasonably certain the node is a real domain name.
 **/
-static void resolve_host(struct ares_gaicb *cb)
+static void resolve_host_inet(struct ares_gaicb *cb)
 {
-	if (ARE_BITS_SET(cb->ar_hints.ai_flags, ARES_AI_NUMERICHOST)) {
-		/* We are not allowed to use DNS. */
-		cb->ar_callback(cb->ar_arg, ARES_ENONAME, 0, NULL);
-		free_gaicb(cb);
-		return;
-	}
+	ares_gethostbyname(cb->ar_channel, cb->ar_node, AF_INET, host_callback, cb);
+}
 
-	/* TODO(tommie): Implement resolution. */
-
-	cb->ar_callback(cb->ar_arg, ARES_ENONAME, 0, NULL);
-	free_gaicb(cb);
+/**
+ * Attempt to resolve the node name of the request.
+ *
+ * We are reasonably certain the node is a real domain name.
+**/
+static void resolve_host_inet6(struct ares_gaicb *cb)
+{
+	ares_gethostbyname(cb->ar_channel, cb->ar_node, AF_INET6, host_callback, cb);
 }
 
 /**
@@ -238,21 +357,36 @@ static void next_state(struct ares_gaicb *cb)
 	 * sockaddrs we will have when we do the service lookup.
 	 * Also, this has to be done before the canonical name lookup.
 	 */
-	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_NUMERIC_HOST_INET)) {
-		CLEAR_BITS(cb->ar_state, ARES_GAICB_NUMERIC_HOST_INET);
-		try_pton_inet(cb);
-		return;
-	}
-
 	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_NUMERIC_HOST_INET6)) {
 		CLEAR_BITS(cb->ar_state, ARES_GAICB_NUMERIC_HOST_INET6);
 		try_pton_inet6(cb);
 		return;
 	}
 
-	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_HOST)) {
-		CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST);
-		resolve_host(cb);
+	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_NUMERIC_HOST_INET)) {
+		CLEAR_BITS(cb->ar_state, ARES_GAICB_NUMERIC_HOST_INET);
+		try_pton_inet(cb);
+		return;
+	}
+
+	if (ARE_ANY_BITS_SET(cb->ar_state, ARES_GAICB_ANY_HOST) && ARE_BITS_SET(cb->ar_hints.ai_flags, ARES_AI_NUMERICHOST)) {
+		/* We are not allowed to use DNS, but haven't been able to
+		 * resolve the node name.
+		 */
+		cb->ar_callback(cb->ar_arg, ARES_ENONAME, 0, NULL);
+		free_gaicb(cb);
+		return;
+	}
+
+	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_HOST_INET6)) {
+		CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET6);
+		resolve_host_inet6(cb);
+		return;
+	}
+
+	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_HOST_INET)) {
+		CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET);
+		resolve_host_inet(cb);
 		return;
 	}
 
@@ -307,7 +441,8 @@ static void start(ares_channel channel, const char *nodename, const char *servic
 	/* Here, we determine what we have to do. */
 	cb->ar_state =
 		(servicename ? ARES_GAICB_SERV | ARES_GAICB_NUMERIC_SERV : 0) |
-		(nodename ? ARES_GAICB_HOST : 0) |
+		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET) ? ARES_GAICB_HOST_INET : 0) |
+		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET6) ? ARES_GAICB_HOST_INET6 : 0) |
 		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET) ? ARES_GAICB_NUMERIC_HOST_INET : 0) |
 		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET6) ? ARES_GAICB_NUMERIC_HOST_INET6 : 0) |
 		(ARE_BITS_SET(hints->ai_flags, ARES_AI_CANONNAME) ? ARES_GAICB_CANONICAL : 0);
