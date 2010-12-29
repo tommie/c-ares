@@ -532,8 +532,8 @@ static void start(ares_channel channel, const char *nodename, const char *servic
 		(servicename ? ARES_GAICB_SERV | ARES_GAICB_NUMERIC_SERV : 0) |
 		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET) ? ARES_GAICB_HOST_INET : 0) |
 		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET6) ? ARES_GAICB_HOST_INET6 : 0) |
-		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET) ? ARES_GAICB_NUMERIC_HOST_INET : 0) |
-		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET6) ? ARES_GAICB_NUMERIC_HOST_INET6 : 0) |
+		(hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET ? ARES_GAICB_NUMERIC_HOST_INET : 0) |
+		(hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET6 ? ARES_GAICB_NUMERIC_HOST_INET6 : 0) |
 		(ARE_BITS_SET(hints->ai_flags, ARES_AI_CANONNAME) ? ARES_GAICB_CANONICAL : 0);
 
 	cb->ar_status = 0;
