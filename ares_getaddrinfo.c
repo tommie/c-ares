@@ -149,6 +149,7 @@ static void ares_freeaddrinfo(struct ares_addrinfo *ai)
 	while (ai) {
 		struct ares_addrinfo *next = ai->ai_next;
 
+		free(ai->ai_canonname);
 		free(ai);
 		ai = next;
 	}
@@ -202,6 +203,19 @@ static void try_pton_inet(struct ares_gaicb *cb)
 	result->ai_next = cb->ar_result;
 	cb->ar_result = result;
 
+	if (ARE_BITS_SET(cb->ar_hints.ai_flags, ARES_AI_CANONNAME)) {
+		/* glibc 2.7 returns the literal address in this case.
+		 * So do we.
+		 */
+		result->ai_canonname = strdup(cb->ar_node);
+
+		if (!result->ai_canonname) {
+			cb->ar_callback(cb->ar_arg, ARES_ENOMEM, 0, NULL);
+			free_gaicb(cb);
+			return;
+		}
+	}
+
 	CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET | ARES_GAICB_HOST_INET6);
 	next_state(cb);
 }
@@ -242,6 +256,19 @@ static void try_pton_inet6(struct ares_gaicb *cb)
 	/* Add to the result linked list. */
 	result->ai_next = cb->ar_result;
 	cb->ar_result = result;
+
+	if (ARE_BITS_SET(cb->ar_hints.ai_flags, ARES_AI_CANONNAME)) {
+		/* glibc 2.7 returns the literal address in this case.
+		 * So do we.
+		 */
+		result->ai_canonname = strdup(cb->ar_node);
+
+		if (!result->ai_canonname) {
+			cb->ar_callback(cb->ar_arg, ARES_ENOMEM, 0, NULL);
+			free_gaicb(cb);
+			return;
+		}
+	}
 
 	CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET | ARES_GAICB_HOST_INET6);
 	next_state(cb);
@@ -319,6 +346,19 @@ static void host_callback(void *arg, int status, int timeouts, struct hostent *h
 		break;
 	}
 
+	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_CANONICAL) && hostent->h_name) {
+		/* If we need the canonical name, and one is available,
+		 * add it, since it's free.
+		 */
+		cb->ar_result->ai_canonname = strdup(hostent->h_name);
+
+		if (!cb->ar_result->ai_canonname) {
+			cb->ar_callback(cb->ar_arg, ARES_ENOMEM, cb->ar_timeouts, NULL);
+			free_gaicb(cb);
+			return;
+		}
+	}
+
 	next_state(cb);
 }
 
@@ -340,6 +380,47 @@ static void resolve_host_inet(struct ares_gaicb *cb)
 static void resolve_host_inet6(struct ares_gaicb *cb)
 {
 	ares_gethostbyname(cb->ar_channel, cb->ar_node, AF_INET6, host_callback, cb);
+}
+
+/**
+ * Retrieve the canonical name.
+ *
+ * If one is already set for any result object, use that.
+ * Else, fail.
+**/
+static void find_canonical(struct ares_gaicb *cb)
+{
+	struct ares_addrinfo *ai;
+
+	if (cb->ar_result && cb->ar_result->ai_canonname) {
+		/* We already have the canonical name in place. */
+		next_state(cb);
+		return;
+	}
+
+	/* Look for the canonical name in some trailing addrinfo object. */
+	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
+		if (ai != cb->ar_result && ai->ai_canonname) {
+			cb->ar_result->ai_canonname = strdup(ai->ai_canonname);
+
+			if (!cb->ar_result->ai_canonname) {
+				cb->ar_callback(cb->ar_arg, ARES_ENOMEM, cb->ar_timeouts, NULL);
+				free_gaicb(cb);
+				return;
+			}
+
+			next_state(cb);
+			return;
+		}
+	}
+
+	/* TODO(tommie): Is there any case where we will actually get here?
+	 *               Should we do a reverse lookup then?
+	 */
+
+	/* Failed to get canonical name. */
+	cb->ar_callback(cb->ar_arg, ARES_EBADNAME, cb->ar_timeouts, NULL);
+	free_gaicb(cb);
 }
 
 /**
@@ -387,6 +468,12 @@ static void next_state(struct ares_gaicb *cb)
 	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_HOST_INET)) {
 		CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET);
 		resolve_host_inet(cb);
+		return;
+	}
+
+	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_CANONICAL)) {
+		CLEAR_BITS(cb->ar_state, ARES_GAICB_CANONICAL);
+		find_canonical(cb);
 		return;
 	}
 
@@ -482,14 +569,6 @@ void ares_getaddrinfo(
 
 	if (ARE_BITS_SET(hints->ai_flags, ARES_AI_ALL) && !ARE_BITS_SET(hints->ai_flags, ARES_AI_V4MAPPED)) {
 		/* AI_ALL must only be set if AI_V4MAPPED is set. */
-		callback(arg, ARES_EBADFLAGS, 0, NULL);
-		return;
-	}
-
-	if (ARE_BITS_SET(hints->ai_flags, ARES_AI_NUMERICHOST | ARES_AI_CANONNAME)) {
-		/* If we may not do any DNS lookups,
-		 * we cannot guarantee returning a canonical name.
-		 */
 		callback(arg, ARES_EBADFLAGS, 0, NULL);
 		return;
 	}

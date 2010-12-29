@@ -42,6 +42,13 @@
 		longjmp(TEST_CONTEXT->env, 0); \
 	}
 
+#define ASSERT_EQUALS_STR(real, expected) \
+	if (!(real) || !(expected) || strcmp((real), (expected))) { \
+		++TEST_CONTEXT->num_errors; \
+		fprintf(stderr, "assertion failed: real %s != expected %s\n", #real, #expected); \
+		longjmp(TEST_CONTEXT->env, 0); \
+	}
+
 #define PROCESS_UNTIL(channel, expr) \
 	do { \
 		while (!(expr)) { \
@@ -204,6 +211,54 @@ TEST(agai_localhost)
 	ares_destroy(channel);
 }
 
+static void agai_canonical_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
+{
+	ASSERT_EQUALS(status, ARES_SUCCESS);
+	ASSERT_EQUALS(timeouts, 0);
+	ASSERT(result);
+	ASSERT_EQUALS_STR(result->ai_canonname, "localhost");
+	(*((int*) arg))++;
+}
+
+TEST(agai_canonical)
+{
+	ares_channel channel;
+	struct ares_addrinfo hints;
+	int callbacks = 0;
+
+	ASSERT(!ares_init(&channel));
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_flags = ARES_AI_CANONNAME;
+	ares_getaddrinfo(channel, "localhost", NULL, &hints, agai_canonical_callback, &callbacks);
+	PROCESS_UNTIL(channel, callbacks);
+	ASSERT_EQUALS(callbacks, 1);
+	ares_destroy(channel);
+}
+
+static void agai_numeric_canonical_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
+{
+	ASSERT_EQUALS(status, ARES_SUCCESS);
+	ASSERT_EQUALS(timeouts, 0);
+	ASSERT(result);
+	ASSERT_EQUALS_STR(result->ai_canonname, "1.2.3.4");
+	(*((int*) arg))++;
+}
+
+TEST(agai_numeric_canonical)
+{
+	ares_channel channel;
+	struct ares_addrinfo hints;
+	int callbacks = 0;
+
+	ASSERT(!ares_init(&channel));
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_flags = ARES_AI_NUMERICHOST | ARES_AI_CANONNAME;
+	ares_getaddrinfo(channel, "1.2.3.4", NULL, &hints, agai_numeric_canonical_callback, &callbacks);
+	PROCESS_UNTIL(channel, callbacks);
+	ASSERT_EQUALS(callbacks, 1);
+	ares_destroy(channel);
+}
+
 int main(int argc, char **argv)
 {
 	struct test_context ctx;
@@ -215,6 +270,8 @@ int main(int argc, char **argv)
 	RUN_TEST(agai_numeric_localhost_inet6);
 	RUN_TEST(agai_nonnumeric_localhost);
 	RUN_TEST(agai_localhost);
+	RUN_TEST(agai_canonical);
+	RUN_TEST(agai_numeric_canonical);
 
 	test_context = NULL;
 
