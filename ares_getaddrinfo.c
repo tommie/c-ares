@@ -432,7 +432,7 @@ static void try_serv_strtol(struct ares_gaicb *cb)
 	char *endp;
 	struct ares_addrinfo *ai;
 
-	val = strtol(cb->ar_service, &endp, 0);
+	val = strtol(cb->ar_service, &endp, 10);
 
 	if (endp != cb->ar_service + strlen(cb->ar_service)) {
 		/* Not a numeric port. */
