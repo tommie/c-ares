@@ -140,6 +140,39 @@ static struct ares_addrinfo* create_addrinfo_inet6(const struct ares_addrinfo *t
 }
 
 /**
+ * Construct a new ares_addrinfo object and assign it the given
+ * AF_INET address, but transformed as a AF_INET6 mapped address.
+ *
+ * The sockaddr_in6.sin6_port member is set to zero.
+ *
+ * @param template the template addrinfo object to copy.
+ * @param addr the address to fill in.
+ * @return a malloc()d object, suitable for ares_freeaddrinfo(),
+ *         or NULL on error.
+**/
+static struct ares_addrinfo* create_addrinfo_v4mapped(const struct ares_addrinfo *template, const struct in_addr *addr)
+{
+	struct sockaddr_in6 *sa;
+	struct ares_addrinfo *result = malloc(sizeof(*result) + sizeof(*sa));
+
+	if (!result) return NULL;
+
+	*result = *template;
+	result->ai_family = AF_INET6;
+	result->ai_addrlen = sizeof(*sa);
+	result->ai_addr = (struct sockaddr*) (result + 1);
+
+	sa = (struct sockaddr_in6*) result->ai_addr;
+
+	memset(sa, 0, sizeof(*sa));
+	sa->sin6_family = AF_INET6;
+	sa->sin6_addr.s6_addr16[5] = htons(0xFFFF);
+	sa->sin6_addr.s6_addr32[3] = addr->s_addr;
+
+	return result;
+}
+
+/**
  * Free the given ares_addrinfo object and it's members.
  *
  * Each object is free()d.
@@ -191,7 +224,10 @@ static void try_pton_inet(struct ares_gaicb *cb)
 	}
 
 	/* Owned by cb after this function returns. */
-	result = create_addrinfo_inet(&cb->ar_hints, &addr);
+	result = (
+		cb->ar_hints.ai_family == AF_INET6 ?
+		create_addrinfo_v4mapped(&cb->ar_hints, &addr) :
+		create_addrinfo_inet(&cb->ar_hints, &addr));
 
 	if (!result) {
 		cb->ar_callback(cb->ar_arg, ARES_ENOMEM, 0, NULL);
@@ -305,7 +341,11 @@ static void host_callback(void *arg, int status, int timeouts, struct hostent *h
 	switch (hostent->h_addrtype) {
 	case AF_INET:
 		for (addr = hostent->h_addr_list; *addr; ++addr) {
-			struct ares_addrinfo *result = create_addrinfo_inet(&cb->ar_hints, (struct in_addr*) *addr);
+			/* Yes, this is horrible, but we're just following the RFC... */
+			struct ares_addrinfo *result = (
+				cb->ar_hints.ai_family == AF_INET6 ?
+				create_addrinfo_v4mapped(&cb->ar_hints, (struct in_addr*) *addr) :
+				create_addrinfo_inet(&cb->ar_hints, (struct in_addr*) *addr));
 
 			if (!result) {
 				cb->ar_callback(cb->ar_arg, ARES_ENOMEM, cb->ar_timeouts, NULL);
@@ -343,6 +383,13 @@ static void host_callback(void *arg, int status, int timeouts, struct hostent *h
 
 		/* For symmetry with the above. */
 		CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET6);
+
+		/* If we do AF_INET6, and mapped-IPv4 are unnecessary,
+		 * just don't ask for them. AI_ALL implies AI_V4MAPPED i set.
+		 */
+		if (cb->ar_hints.ai_family == AF_INET6 && *hostent->h_addr_list && !ARE_BITS_SET(cb->ar_hints.ai_flags, ARES_AI_ALL))
+			CLEAR_BITS(cb->ar_state, ARES_GAICB_HOST_INET);
+
 		break;
 	}
 
@@ -732,9 +779,9 @@ static void start(ares_channel channel, const char *nodename, const char *servic
 	/* Here, we determine what we have to do. */
 	cb->ar_state =
 		(servicename ? ARES_GAICB_SERV | ARES_GAICB_NUMERIC_SERV : 0) |
-		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET) ? ARES_GAICB_HOST_INET : 0) |
+		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET || (hints->ai_family == AF_INET6 && ARE_BITS_SET(hints->ai_flags, ARES_AI_V4MAPPED))) ? ARES_GAICB_HOST_INET : 0) |
 		(nodename && (hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET6) ? ARES_GAICB_HOST_INET6 : 0) |
-		(hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET ? ARES_GAICB_NUMERIC_HOST_INET : 0) |
+		(hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET || (hints->ai_family == AF_INET6 && ARE_BITS_SET(hints->ai_flags, ARES_AI_V4MAPPED)) ? ARES_GAICB_NUMERIC_HOST_INET : 0) |
 		(hints->ai_family == AF_UNSPEC || hints->ai_family == AF_INET6 ? ARES_GAICB_NUMERIC_HOST_INET6 : 0) |
 		(ARE_BITS_SET(hints->ai_flags, ARES_AI_CANONNAME) ? ARES_GAICB_CANONICAL : 0);
 

@@ -259,6 +259,34 @@ TEST(agai_numeric_canonical)
 	ares_destroy(channel);
 }
 
+static void agai_numeric_v4mapped_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
+{
+	ASSERT_EQUALS(status, ARES_SUCCESS);
+	ASSERT_EQUALS(timeouts, 0);
+	ASSERT(result);
+	ASSERT_EQUALS(result->ai_family, AF_INET6);
+	ASSERT_EQUALS(result->ai_addrlen, sizeof(struct sockaddr_in6));
+	ASSERT(result->ai_addr);
+	ASSERT_EQUALS(result->ai_addr->sa_family, AF_INET6);
+	ASSERT(IN6_IS_ADDR_V4MAPPED(&((struct sockaddr_in6*) result->ai_addr)->sin6_addr));
+	(*((int*) arg))++;
+}
+
+TEST(agai_numeric_v4mapped)
+{
+	ares_channel channel;
+	struct ares_addrinfo hints;
+	int callbacks = 0;
+
+	ASSERT(!ares_init(&channel));
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET6;
+	hints.ai_flags = ARES_AI_NUMERICHOST | ARES_AI_V4MAPPED;
+	ares_getaddrinfo(channel, "127.0.0.1", NULL, &hints, agai_numeric_v4mapped_callback, &callbacks);
+	ASSERT_EQUALS(callbacks, 1);
+	ares_destroy(channel);
+}
+
 
 static void agai_numeric_service_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
 {
@@ -361,6 +389,7 @@ int main(int argc, char **argv)
 	RUN_TEST(agai_localhost);
 	RUN_TEST(agai_canonical);
 	RUN_TEST(agai_numeric_canonical);
+	RUN_TEST(agai_numeric_v4mapped);
 
 	RUN_TEST(agai_numeric_service);
 	RUN_TEST(agai_nonnumeric_service);
