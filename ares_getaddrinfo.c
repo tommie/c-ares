@@ -465,6 +465,146 @@ static void try_serv_strtol(struct ares_gaicb *cb)
 }
 
 /**
+ * Return some arbitrarily good default socket type for the given
+ * address family.
+ *
+ * @return a SOCK_* constant, or -1 if the family is unknown.
+**/
+static int get_default_socktype(int family)
+{
+	switch (family) {
+	case AF_INET:
+	case AF_INET6:
+		/* Most protocols go via TCP (gut feeling), so default
+		 * to using that.
+		 */
+		return SOCK_STREAM;
+
+	default:
+		return -1;
+	}
+}
+
+/**
+ * Return some arbitrarily good default protocol for the given
+ * address family and socket type.
+ *
+ * @return a IPPROTO_* constant for AF_INET and AF_INET6,
+ *         or -1 if the address family or socket type is unknown.
+**/
+static int get_default_protocol(int family, int socktype)
+{
+	switch (family) {
+	case AF_INET:
+	case AF_INET6:
+		switch (socktype) {
+		case SOCK_STREAM:
+			return IPPROTO_TCP;
+
+		case SOCK_DGRAM:
+			return IPPROTO_UDP;
+
+		case SOCK_RAW:
+			return IPPROTO_RAW;
+
+		case SOCK_SEQPACKET:
+			return IPPROTO_SCTP;
+
+		default:
+			return -1;
+		}
+
+	default:
+		return -1;
+	}
+}
+
+/**
+ * Resolve the ar_service member as a symbolic name, using the
+ * getservbyname() call from libc.
+ *
+ * Note that depending on NSS, this may actually involve IO.
+ * We assume this IO is disk in 99.99% of all cases, and that
+ * the disk cache is warm.
+ *
+ * Note that unlike glibc 2.7, we don't add one record for every protocol
+ * we know if (hints.ai_protocol == 0). Reading RFC 2553:
+ *
+ *   A value of 0 for ai_socktype means the caller will accept
+ *   any socket type. A value of 0 for ai_protocol means the caller
+ *   will accept any protocol.
+ *
+ * Which leaves the field open for interpretation.
+**/
+static void resolve_serv(struct ares_gaicb *cb)
+{
+	struct ares_addrinfo *ai;
+
+	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
+		struct protoent *protoent;
+		struct servent *servent;
+
+		if (!ai->ai_socktype) {
+			ai->ai_socktype = get_default_socktype(ai->ai_family);
+
+			if (ai->ai_socktype < 0) {
+				/* Failed to find a default value. */
+				cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
+				free_gaicb(cb);
+				return;
+			}
+		}
+
+		if (!ai->ai_protocol) {
+			ai->ai_protocol = get_default_protocol(ai->ai_family, ai->ai_socktype);
+
+			if (ai->ai_protocol < 0) {
+				/* Failed to find a default value. */
+				cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
+				free_gaicb(cb);
+				return;
+			}
+		}
+
+		/* FIXME(tommie): Not thread-safe. */
+		protoent = getprotobynumber(ai->ai_protocol);
+
+		if (!protoent) {
+			cb->ar_callback(cb->ar_arg, ARES_EBADHINTS, cb->ar_timeouts, NULL);
+			free_gaicb(cb);
+			return;
+		}
+
+		/* FIXME(tommie): Not thread-safe. */
+		servent = getservbyname(cb->ar_service, protoent->p_name);
+
+		if (!servent) {
+			cb->ar_callback(cb->ar_arg, ARES_ENONAME, cb->ar_timeouts, NULL);
+			free_gaicb(cb);
+			return;
+		}
+
+		switch (ai->ai_family) {
+		case AF_INET:
+			((struct sockaddr_in*) ai->ai_addr)->sin_port = servent->s_port;
+			break;
+
+		case AF_INET6:
+			((struct sockaddr_in6*) ai->ai_addr)->sin6_port = servent->s_port;
+			break;
+
+		default:
+			/* Should not happen unless our own code is bad. */
+			cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
+			free_gaicb(cb);
+			return;
+		}
+	}
+
+	next_state(cb);
+}
+
+/**
  * Evaluate the state of the request, and perform the next step.
  *
  * The last step is (ares_gaicb.ar_state == 0) and is where the callback
@@ -523,6 +663,21 @@ static void next_state(struct ares_gaicb *cb)
 	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_NUMERIC_SERV)) {
 		CLEAR_BITS(cb->ar_state, ARES_GAICB_NUMERIC_SERV);
 		try_serv_strtol(cb);
+		return;
+	}
+
+	if (ARE_ANY_BITS_SET(cb->ar_state, ARES_GAICB_SERV) && ARE_BITS_SET(cb->ar_hints.ai_flags, ARES_AI_NUMERICSERV)) {
+		/* We are not allowed to use DNS, but haven't been able to
+		 * resolve the service name.
+		 */
+		cb->ar_callback(cb->ar_arg, ARES_ENONAME, 0, NULL);
+		free_gaicb(cb);
+		return;
+	}
+
+	if (ARE_BITS_SET(cb->ar_state, ARES_GAICB_SERV)) {
+		CLEAR_BITS(cb->ar_state, ARES_GAICB_SERV);
+		resolve_serv(cb);
 		return;
 	}
 

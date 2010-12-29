@@ -288,7 +288,7 @@ TEST(agai_numeric_service)
 
 static void agai_nonnumeric_service_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
 {
-	ASSERT_EQUALS(status, ARES_EFORMERR);
+	ASSERT_EQUALS(status, ARES_ENONAME);
 	(*((int*) arg))++;
 }
 
@@ -302,6 +302,48 @@ TEST(agai_nonnumeric_service)
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_flags = ARES_AI_NUMERICSERV;
 	ares_getaddrinfo(channel, NULL, "echo", &hints, agai_nonnumeric_service_callback, &callbacks);
+	ASSERT_EQUALS(callbacks, 1);
+	ares_destroy(channel);
+}
+
+static void agai_service_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
+{
+	const struct ares_addrinfo *ai;
+
+	ASSERT_EQUALS(status, ARES_SUCCESS);
+	ASSERT_EQUALS(timeouts, 0);
+	ASSERT(result);
+	ASSERT(result->ai_next);
+
+	if (result->ai_family == AF_INET)
+		ai = result;
+	else
+		ai = result->ai_next;
+
+	ASSERT_EQUALS(ai->ai_family, AF_INET);
+	ASSERT_EQUALS(ai->ai_addrlen, sizeof(struct sockaddr_in));
+	ASSERT(ai->ai_addr);
+	ASSERT_EQUALS(((struct sockaddr_in*) ai->ai_addr)->sin_port, htons(IPPORT_ECHO));
+
+	if (result->ai_family == AF_INET6)
+		ai = result;
+	else
+		ai = result->ai_next;
+
+	ASSERT_EQUALS(ai->ai_family, AF_INET6);
+	ASSERT_EQUALS(ai->ai_addrlen, sizeof(struct sockaddr_in6));
+	ASSERT(ai->ai_addr);
+	ASSERT_EQUALS(((struct sockaddr_in6*) ai->ai_addr)->sin6_port, htons(IPPORT_ECHO));
+	(*((int*) arg))++;
+}
+
+TEST(agai_service)
+{
+	ares_channel channel;
+	int callbacks = 0;
+
+	ASSERT(!ares_init(&channel));
+	ares_getaddrinfo(channel, NULL, "echo", NULL, agai_service_callback, &callbacks);
 	ASSERT_EQUALS(callbacks, 1);
 	ares_destroy(channel);
 }
@@ -322,6 +364,7 @@ int main(int argc, char **argv)
 
 	RUN_TEST(agai_numeric_service);
 	RUN_TEST(agai_nonnumeric_service);
+	RUN_TEST(agai_service);
 
 	test_context = NULL;
 
