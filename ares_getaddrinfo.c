@@ -38,6 +38,9 @@
 
 
 /* --- Types --- */
+/**
+ * The request structure used for each call to ares_getaddrinfo().
+**/
 struct ares_gaicb {
 	/* Arguments */
 	ares_channel ar_channel;
@@ -49,9 +52,8 @@ struct ares_gaicb {
 	void *ar_arg;
 
 	/* State data */
-	unsigned int ar_state;
-	int ar_status;
-	unsigned int ar_timeouts;
+	unsigned int ar_state; /* The current request state, a bitmask of ARES_GAICB_*. */
+	unsigned int ar_timeouts; /* The number of timeouts that have occurred. */
 };
 
 
@@ -813,7 +815,6 @@ static void start(ares_channel channel, const char *nodename, const char *servic
 		(ARE_BITS_SET(hints->ai_flags, ARES_AI_CANONNAME) ?
 			ARES_GAICB_CANONICAL : 0);
 
-	cb->ar_status = 0;
 	cb->ar_timeouts = 0;
 
 	/* Now, we do it. */
