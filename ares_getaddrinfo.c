@@ -471,47 +471,6 @@ static void find_canonical(struct ares_gaicb *cb)
 }
 
 /**
- * Attempt to resolve the ar_service member as a number.
-**/
-static void try_serv_strtol(struct ares_gaicb *cb)
-{
-	long val;
-	char *endp;
-	struct ares_addrinfo *ai;
-
-	val = strtol(cb->ar_service, &endp, 10);
-
-	if (endp != cb->ar_service + strlen(cb->ar_service)) {
-		/* Not a numeric port. */
-		next_state(cb);
-		return;
-	}
-
-	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
-		/* TODO(tommie): Are overflow checks necessary here? */
-		switch (ai->ai_family) {
-		case AF_INET:
-			((struct sockaddr_in*) ai->ai_addr)->sin_port = htons(val);
-			break;
-
-		case AF_INET6:
-			((struct sockaddr_in6*) ai->ai_addr)->sin6_port = htons(val);
-			break;
-
-		default:
-			/* Should not happen unless our own code is bad. */
-			cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
-			free_gaicb(cb);
-			return;
-		}
-	}
-
-	/* No need to look up service. */
-	CLEAR_BITS(cb->ar_state, ARES_GAICB_SERV);
-	next_state(cb);
-}
-
-/**
  * Return some arbitrarily good default socket type for the given
  * address family.
  *
@@ -567,6 +526,85 @@ static int get_default_protocol(int family, int socktype)
 }
 
 /**
+ * Ensure the ai_socktype and ai_protocol members have sensible values.
+ *
+ * @return zero on success, -1 on failure.
+**/
+static int setup_protocol(struct ares_gaicb *cb)
+{
+	struct ares_addrinfo *ai;
+
+	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
+		if (!ai->ai_socktype) {
+			ai->ai_socktype = get_default_socktype(ai->ai_family);
+
+			if (ai->ai_socktype < 0) {
+				/* Failed to find a default value. */
+				return -1;
+			}
+		}
+
+		if (!ai->ai_protocol) {
+			ai->ai_protocol = get_default_protocol(ai->ai_family, ai->ai_socktype);
+
+			if (ai->ai_protocol < 0) {
+				/* Failed to find a default value. */
+				return -1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * Attempt to resolve the ar_service member as a number.
+**/
+static void try_serv_strtol(struct ares_gaicb *cb)
+{
+	long val;
+	char *endp;
+	struct ares_addrinfo *ai;
+
+	val = strtol(cb->ar_service, &endp, 10);
+
+	if (endp != cb->ar_service + strlen(cb->ar_service)) {
+		/* Not a numeric port. */
+		next_state(cb);
+		return;
+	}
+
+	if (setup_protocol(cb)) {
+		cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
+		free_gaicb(cb);
+		return;
+	}
+
+	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
+		/* TODO(tommie): Are overflow checks necessary here? */
+		switch (ai->ai_family) {
+		case AF_INET:
+			((struct sockaddr_in*) ai->ai_addr)->sin_port = htons(val);
+			break;
+
+		case AF_INET6:
+			((struct sockaddr_in6*) ai->ai_addr)->sin6_port = htons(val);
+			break;
+
+		default:
+			/* Should not happen unless our own code is bad. */
+			cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
+			free_gaicb(cb);
+			return;
+		}
+	}
+
+	/* No need to look up service. */
+	CLEAR_BITS(cb->ar_state, ARES_GAICB_SERV);
+	next_state(cb);
+}
+
+/**
  * Resolve the ar_service member as a symbolic name, using the
  * getservbyname() call from libc.
  *
@@ -587,31 +625,15 @@ static void resolve_serv(struct ares_gaicb *cb)
 {
 	struct ares_addrinfo *ai;
 
+	if (setup_protocol(cb)) {
+		cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
+		free_gaicb(cb);
+		return;
+	}
+
 	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
 		struct protoent *protoent;
 		struct servent *servent;
-
-		if (!ai->ai_socktype) {
-			ai->ai_socktype = get_default_socktype(ai->ai_family);
-
-			if (ai->ai_socktype < 0) {
-				/* Failed to find a default value. */
-				cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
-				free_gaicb(cb);
-				return;
-			}
-		}
-
-		if (!ai->ai_protocol) {
-			ai->ai_protocol = get_default_protocol(ai->ai_family, ai->ai_socktype);
-
-			if (ai->ai_protocol < 0) {
-				/* Failed to find a default value. */
-				cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
-				free_gaicb(cb);
-				return;
-			}
-		}
 
 		/* FIXME(tommie): Not thread-safe. */
 		protoent = getprotobynumber(ai->ai_protocol);

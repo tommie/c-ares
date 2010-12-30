@@ -293,6 +293,8 @@ static void agai_numeric_service_callback(void *arg, int status, int timeouts, s
 	ASSERT_EQUALS(status, ARES_SUCCESS);
 	ASSERT_EQUALS(timeouts, 0);
 	ASSERT(result);
+	ASSERT(result->ai_socktype != 0);
+	ASSERT(result->ai_protocol != 0);
 	ASSERT_EQUALS(result->ai_addrlen, sizeof(struct sockaddr_in));
 	ASSERT(result->ai_addr);
 	ASSERT_EQUALS(result->ai_addr->sa_family, AF_INET);
