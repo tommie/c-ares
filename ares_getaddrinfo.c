@@ -29,10 +29,10 @@
 #define ARES_GAICB_SERV               (1u << 0u) /* The service must be looked up */
 #define ARES_GAICB_NUMERIC_SERV       (1u << 1u) /* The service may be a numeric port */
 #define ARES_GAICB_HOST_INET          (1u << 2u) /* The AF_INET address must be looked up */
-#define ARES_GAICB_NUMERIC_HOST_INET  (1u << 3u) /* The host name may be a numeric AF_INET address */
-#define ARES_GAICB_NUMERIC_HOST_INET6 (1u << 4u) /* The host name may be a numeric AF_INET6 address */
-#define ARES_GAICB_CANONICAL          (1u << 5u) /* The canonical name must be looked up */
-#define ARES_GAICB_HOST_INET6         (1u << 6u) /* The AF_INET6 address must be looked up */
+#define ARES_GAICB_HOST_INET6         (1u << 3u) /* The AF_INET6 address must be looked up */
+#define ARES_GAICB_NUMERIC_HOST_INET  (1u << 4u) /* The host name may be a numeric AF_INET address */
+#define ARES_GAICB_NUMERIC_HOST_INET6 (1u << 5u) /* The host name may be a numeric AF_INET6 address */
+#define ARES_GAICB_CANONICAL          (1u << 6u) /* The canonical name must be looked up */
 
 #define ARES_GAICB_ANY_HOST (ARES_GAICB_HOST_INET | ARES_GAICB_HOST_INET6 | ARES_GAICB_NUMERIC_HOST_INET | ARES_GAICB_NUMERIC_HOST_INET6)
 
