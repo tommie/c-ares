@@ -12,6 +12,43 @@
  * this software for any purpose.  It is provided "as is"
  * without express or implied warranty.
  */
+/*
+ * This file implements ares_getaddrinfo(), the c-ares interpretation of
+ * getaddrinfo() as found in RFC 2553.
+ *
+ * The main function is located at the bottom. It verifies arguments and
+ * then calls start(), which creates the ares_gaicb request object and
+ * decides what to do.
+ *
+ * start() will call next_state(), which is the engine driving
+ * the whole thing. next_state() evaluates the current state and dispatches
+ * calls to functions for state transitions.
+ *
+ * When (ares_gaicb.ar_state == 0), we have nothing left to do, and the
+ * request is completed.
+ *
+ * Quirks
+ * ------
+ *
+ *  * The AI_ADDRCONFIG is a really weird beast. Even the FreeBSD
+ *    libc developers seem to think this, so we don't care about that
+ *    flag at all. The RFC (informally) says "should," so it's not like
+ *    we are voiding RFC compliance...
+ *
+ *  * Unlike the getaddrinfo() in glibc 2.7, we don't add one addrinfo object
+ *    per protocol if (hints.ai_protocol == 0). I'm not sure why they do it,
+ *    and the RFC isn't clear.
+ *
+ *  * We could be doing AF_INET and AF_INET6 resolutions in parallel.
+ *    Currently they are serial, which is good while ares_gethostbyname(AF_INET6)
+ *    runs a AF_INET lookup if there are no AF_INET6 records.
+ *
+ *  * The next_state() function is not the most efficient. It's called
+ *    for every transition which causes it to skip if-statements from top
+ *    to bottom as the request progresses. Should be optimized when need
+ *    arises.
+ */
+
 #include "ares_setup.h"
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -21,8 +58,11 @@
 
 
 /* --- Macros --- */
+/* Check if any bits of \c mask are set in \c x. */
 #define ARE_ANY_BITS_SET(x, mask) ((x) & (mask))
+/* Check if all bits of \c mask are set in \c x. */
 #define ARE_BITS_SET(x, mask) (((x) & (mask)) == (mask))
+/* Clear all bits of \c mask in \c x. */
 #define CLEAR_BITS(x, mask) ((x) &= ~(mask))
 
 /* Bit masks for ares_gaicb.ar_state */
@@ -821,6 +861,9 @@ static void start(ares_channel channel, const char *nodename, const char *servic
 	next_state(cb);
 }
 
+/**
+ * See the man page, ares_getaddrinfo(3).
+**/
 void ares_getaddrinfo(
 	ares_channel channel,
 	const char *nodename, const char *servicename,
