@@ -739,8 +739,6 @@ static void resolve_serv(struct ares_gaicb *cb)
 **/
 static void next_state(struct ares_gaicb *cb)
 {
-	fprintf(stderr, "next_state(cb %p[state 0x%08X])\n", (void*) cb, cb->ar_state);
-
 	/* We always start out doing the host lookup. This way we know which
 	 * sockaddrs we will have when we do the service lookup.
 	 * Also, this has to be done before the canonical name lookup.
