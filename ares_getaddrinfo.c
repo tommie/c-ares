@@ -674,22 +674,20 @@ static void resolve_serv(struct ares_gaicb *cb)
 	}
 
 	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
+		struct protoent protobuf;
+		char pbuf[1024];
+		struct servent servbuf;
+		char sbuf[1024];
 		struct protoent *protoent;
 		struct servent *servent;
 
-		/* FIXME(tommie): Not thread-safe. */
-		protoent = getprotobynumber(ai->ai_protocol);
-
-		if (!protoent) {
+		if (getprotobynumber_r(ai->ai_protocol, &protobuf, pbuf, sizeof(pbuf), &protoent)) {
 			cb->ar_callback(cb->ar_arg, ARES_EBADHINTS, cb->ar_timeouts, NULL);
 			free_gaicb(cb);
 			return;
 		}
 
-		/* FIXME(tommie): Not thread-safe. */
-		servent = getservbyname(cb->ar_service, protoent->p_name);
-
-		if (!servent) {
+		if (getservbyname_r(cb->ar_service, protoent->p_name, &servbuf, sbuf, sizeof(sbuf), &servent)) {
 			cb->ar_callback(cb->ar_arg, ARES_ENONAME, cb->ar_timeouts, NULL);
 			free_gaicb(cb);
 			return;
