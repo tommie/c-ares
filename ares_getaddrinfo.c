@@ -616,6 +616,15 @@ static void try_serv_strtol(struct ares_gaicb *cb)
 		return;
 	}
 
+	/* Both AF_INET and AF_INET6 use the in_port_t, which is uint16_t,
+	 * so do an overflow check here.
+	 */
+	if (val >= (1 << 16)) {
+		cb->ar_callback(cb->ar_arg, ARES_EBADQUERY, cb->ar_timeouts, NULL);
+		free_gaicb(cb);
+		return;
+	}
+
 	if (setup_protocol(cb)) {
 		cb->ar_callback(cb->ar_arg, ARES_EBADFAMILY, cb->ar_timeouts, NULL);
 		free_gaicb(cb);
@@ -623,7 +632,6 @@ static void try_serv_strtol(struct ares_gaicb *cb)
 	}
 
 	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
-		/* TODO(tommie): Are overflow checks necessary here? */
 		switch (ai->ai_family) {
 		case AF_INET:
 			((struct sockaddr_in*) ai->ai_addr)->sin_port = htons(val);
