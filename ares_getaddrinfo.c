@@ -512,8 +512,8 @@ static void find_canonical(struct ares_gaicb *cb)
 		}
 	}
 
-	/* TODO(tommie): Is there any case where we will actually get here?
-	 *               Should we do a reverse lookup then?
+	/* Unless hostent.h_name is invalid in resolve_host(), we should
+	 * never get here.
 	 */
 
 	/* Failed to get canonical name. */
@@ -814,8 +814,6 @@ static void next_state(struct ares_gaicb *cb)
 
 	/* We have no transition from this state to something else,
 	 * so we just fail.
-	 *
-	 * TODO(tommie): Error code?
 	 */
 	cb->ar_callback(cb->ar_arg, ARES_EFORMERR, 0, NULL);
 	free_gaicb(cb);
