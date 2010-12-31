@@ -378,6 +378,48 @@ TEST(agai_service)
 	ares_destroy(channel);
 }
 
+static void agai_full_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
+{
+	const struct ares_addrinfo *ai;
+	int num_inet = 0, num_inet6 = 0;
+
+	ASSERT_EQUALS(status, ARES_SUCCESS);
+	ASSERT_EQUALS(timeouts, 0);
+	ASSERT(result);
+
+	for (ai = result; ai; ai = ai->ai_next) {
+		if (ai->ai_family == AF_INET) {
+			ASSERT_EQUALS(ai->ai_addrlen, sizeof(struct sockaddr_in));
+			ASSERT(ai->ai_addr);
+			ASSERT_EQUALS(((struct sockaddr_in*) ai->ai_addr)->sin_port, htons(IPPORT_ECHO));
+			++num_inet;
+		} else if (ai->ai_family == AF_INET6) {
+			ASSERT_EQUALS(ai->ai_addrlen, sizeof(struct sockaddr_in6));
+			ASSERT(ai->ai_addr);
+			ASSERT_EQUALS(((struct sockaddr_in6*) ai->ai_addr)->sin6_port, htons(IPPORT_ECHO));
+			++num_inet6;
+		} else {
+			ASSERT(0);
+		}
+	}
+
+	ASSERT(num_inet > 0);
+	ASSERT(num_inet6 > 0);
+	(*((int*) arg))++;
+}
+
+TEST(agai_full)
+{
+	ares_channel channel;
+	int callbacks = 0;
+
+	ASSERT(!ares_init(&channel));
+	ares_getaddrinfo(channel, "security.debian.org", "echo", NULL, agai_full_callback, &callbacks);
+	PROCESS_UNTIL(channel, callbacks);
+	ASSERT_EQUALS(callbacks, 1);
+	ares_destroy(channel);
+}
+
 int main(int argc, char **argv)
 {
 	struct test_context ctx;
@@ -396,6 +438,7 @@ int main(int argc, char **argv)
 	RUN_TEST(agai_numeric_service);
 	RUN_TEST(agai_nonnumeric_service);
 	RUN_TEST(agai_service);
+	RUN_TEST(agai_full);
 
 	test_context = NULL;
 
