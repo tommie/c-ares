@@ -13,7 +13,7 @@
 		fprintf(stderr, "Test %s failed\n", #name)
 
 #define TEST(name) \
-	void test_##name(void **state)
+	static void test_##name(void **state)
 
 #define TEST_CONTEXT (test_context)
 
