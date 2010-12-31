@@ -1366,6 +1366,32 @@ AC_DEFUN([CARES_CHECK_FUNC_GETHOSTNAME], [
 ])
 
 
+dnl CARES_CHECK_FUNC_GETPROTOBYNUMBER_R
+dnl -------------------------------------------------
+dnl Check for an available getprotobynumber_r().
+
+AC_DEFUN([CARES_CHECK_FUNC_GETPROTOBYNUMBER_R], [
+  AC_REQUIRE([CARES_INCLUDES_NETDB])dnl
+  #
+  AC_CHECK_FUNC([getprotobynumber_r], [dnl
+    AC_DEFINE_UNQUOTED(HAVE_GETPROTOBYNUMBER_R, 1,
+      [Define to 1 if you have the getprotobynumber_r function.])])
+])
+
+
+dnl CARES_CHECK_FUNC_GETSERVBYNAME_R
+dnl -------------------------------------------------
+dnl Check for an available getservbyname_r().
+
+AC_DEFUN([CARES_CHECK_FUNC_GETSERVBYNAME_R], [
+  AC_REQUIRE([CARES_INCLUDES_NETDB])dnl
+  #
+  AC_CHECK_FUNC([getservbyname_r], [dnl
+    AC_DEFINE_UNQUOTED(HAVE_GETSERVBYNAME_R, 1,
+      [Define to 1 if you have the getservbyname_r function.])])
+])
+
+
 dnl CARES_CHECK_FUNC_GETSERVBYPORT_R
 dnl -------------------------------------------------
 dnl Verify if getservbyport_r is available, prototyped,

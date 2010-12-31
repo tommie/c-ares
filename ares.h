@@ -263,6 +263,8 @@ struct ares_options {
 };
 
 struct hostent;
+struct protoent;
+struct servent;
 struct timeval;
 struct sockaddr;
 struct ares_channeldata;
@@ -400,6 +402,17 @@ CARES_EXTERN void ares_getnameinfo(ares_channel channel,
                                    int flags,
                                    ares_nameinfo_callback callback,
                                    void *arg);
+
+CARES_EXTERN int ares_getprotobynumber_r(const char *protoname,
+                                         char *buf,
+                                         size_t bufsize,
+                                         struct servent **pent);
+
+CARES_EXTERN int ares_getservbyname_r(const char *servicename,
+                                      const char *protoname,
+                                      char *buf,
+                                      size_t bufsize,
+                                      struct servent **pservent);
 
 CARES_EXTERN int ares_fds(ares_channel channel,
                           fd_set *read_fds,
