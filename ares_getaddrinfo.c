@@ -499,14 +499,9 @@ static void find_canonical(struct ares_gaicb *cb)
 	/* Look for the canonical name in some trailing addrinfo object. */
 	for (ai = cb->ar_result; ai; ai = ai->ai_next) {
 		if (ai != cb->ar_result && ai->ai_canonname) {
-			cb->ar_result->ai_canonname = strdup(ai->ai_canonname);
-
-			if (!cb->ar_result->ai_canonname) {
-				cb->ar_callback(cb->ar_arg, ARES_ENOMEM, cb->ar_timeouts, NULL);
-				free_gaicb(cb);
-				return;
-			}
-
+			/* Steal the canonical name. */
+			cb->ar_result->ai_canonname = ai->ai_canonname;
+			ai->ai_canonname = NULL;
 			next_state(cb);
 			return;
 		}
