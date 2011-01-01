@@ -30,18 +30,6 @@
  * Quirks
  * ------
  *
- *  * The AI_ADDRCONFIG is a really weird beast. Even the FreeBSD
- *    libc developers seem to think this, so we don't care about that
- *    flag at all. The RFC (informally) says "should," so it's not like
- *    we are voiding RFC compliance...
- *
- *  * Unlike the getaddrinfo() in glibc 2.7, we don't add one addrinfo object
- *    per protocol if (hints.ai_protocol == 0). I'm not sure why they do it,
- *    and the RFC isn't clear.
- *
- *  * We don't respect /etc/gai.conf, and we don't sort results.
- *    RFC 3484 says how the results should be sorted.
- *
  *  * We could be doing AF_INET and AF_INET6 resolutions in parallel.
  *    Currently they are serial, which is good while ares_gethostbyname(AF_INET6)
  *    runs a AF_INET lookup if there are no AF_INET6 records.

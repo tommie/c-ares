@@ -1,0 +1,325 @@
+.\"
+.\" Copyright 2010 by Tommie Gannert.
+.\"
+.\" Permission to use, copy, modify, and distribute this
+.\" software and its documentation for any purpose and without
+.\" fee is hereby granted, provided that the above copyright
+.\" notice appear in all copies and that both that copyright
+.\" notice and this permission notice appear in supporting
+.\" documentation, and that the name of M.I.T. not be used in
+.\" advertising or publicity pertaining to distribution of the
+.\" software without specific, written prior permission.
+.\" M.I.T. makes no representations about the suitability of
+.\" this software for any purpose.  It is provided "as is"
+.\" without express or implied warranty.
+.\"
+.TH ARES_GETADDRINFO 3 "31 Dec 2010"
+.SH NAME
+ares_getaddrinfo \- Nodename-to-address translation in a protocol-independent manner
+.SH SYNOPSIS
+.nf
+.B #include <ares.h>
+.PP
+.B struct ares_addrinfo;
+.PP
+.B typedef void (*ares_addrinfo_callback)(void *\fIarg\fP,
+.B 	int \fIstatus\fP, int \fItimeouts\fP,
+.B 	struct ares_addrinfo *\fIresult\fP);
+.PP
+.B void ares_getaddrinfo(ares_channel \fIchannel\fP,
+.B 	const char *\fInodename\fP, const char *\fIservicename\fP,
+.B 	const struct ares_addrinfo *\fIhints\fP,
+.B 	ares_addrinfo_callback \fIcallback\fP, void *\fIarg\fP);
+.fi
+
+.SH DESCRIPTION
+The
+.B ares_getaddrinfo
+function is an extension of the
+.I ares_gethostbyname(3)
+function and adds a more protocol independent translation service. Note however,
+that options and the specification is very IPv4/IPv6 centric, so in reality
+only IP address families should be used with this interface.
+
+Arguments must be freed by the caller, and need only be valid
+during the call to \fBares_getaddrinfo\fP. The function will cache arguments
+as needed.
+
+.SS Arguments
+The
+.I hints
+argument contains flags and default values for the returned address records. The
+.B ares_addrinfo
+structure is defined as
+
+.in +4n
+.nf
+struct ares_addrinfo {
+  int                   ai_flags;
+  int                   ai_family;
+  int                   ai_socktype;
+  int                   ai_protocol;
+  size_t                ai_addrlen;
+  struct sockaddr      *ai_addr;
+  char                 *ai_canonname;
+  struct ares_addrinfo *ai_next;
+};
+.fi
+.in
+
+in \fIares.h\fP. For \fIhints\fP, only \fIai_flags\fP, \fIai_family\fP,
+\fIai_socktype\fP, and \fIai_protocol\fP are used. If \fIhints\fP is NULL,
+the defaults stated below are used.
+
+If \fIai_family\fP is \fBAF_INET\fP, the function works like
+.BR ares_gethostbyname ().
+If it is \fBAF_UNSPEC\fP (the default), both IPv4 and IPv6 addresses will be
+returned.  For \fBAF_INET6\fP, only IPv6 addresses will be returned, except in
+some cases, as defined by flags.
+
+In addition, the \fIai_socktype\fP and \fIai_protocol\fP members will be copied
+into each result \fIaddrinfo\fP record. Any of them may be zero (the default)
+in which case \fBSOCK_STREAM\fP and \fBIPPROTO_TCP\fP, respectively, will
+be used.
+
+The \fIai_flags\fP member controls how the resolution should happen.  Defaults
+to \fBARES_AI_ADDRCONFIG | ARES_AI_V4MAPPED\fP.  It is a bitmask with the
+following bitwise or-able flags defined:
+.TP
+.B ARES_AI_CANONNAME
+Make
+.BR ares_getaddrinfo ()
+fill in the \fIai_canonname\fP result member.  Only the head of the linked list
+will have this member set.
+.TP
+.B ARES_AI_V4MAPPED
+For \fBAF_INET6\fP, cause lookup of IPv4 addresses, but return them as
+IPv4-mapped IPv6 addresses (e.g. :FFFF:127.0.0.1). Ignored for all other
+address families.
+.TP
+.B ARES_AI_ALL
+Only valid when \fBARES_AI_V4MAPPED\fP is used.  Causes look up of IPv4
+addresses even when non-mapped IPv6 addresses were found. Ignored for all
+other address families.
+.TP
+.B ARES_AI_NUMERICHOST
+Never cause network traffic due to the \fInodename\fP argument.  Fail if the
+node name cannot be interpreted as a numeric address.
+.TP
+.B ARES_AI_NUMERICSERV
+Never cause network traffic due to the \fIservicename\fP arugment.  Fail if
+the service name cannot be interpreted as a numeric port.
+.TP
+.B ARES_AI_PASSIVE
+When set,
+.BR ares_getaddrinfo ()
+assumes the returned information will be used in a call to
+.BR bind (2)
+or similar call.  If not set, the information will be used in an active call,
+like
+.BR connect (2).
+.TP
+.B ARES_AI_ADDRCONFIG
+Unless \fBPF_UNSPEC\fP is used, only return addresses belonging to families
+the local node has configured addresses for.  This flag is ignored awaiting
+a decent implementation.
+
+.SH RETURN VALUE
+When the callback is invoked, the \fIstatus\fP argument contains a regular
+c-ares status code, or \fBARES_SUCCESS\fP. If an error is returned, the
+\fIresult\fP argument is NULL and should be ignored.
+
+The \fItimeouts\fP argument contains the number of timeouts that have occured
+during the execution of the query.  It is always valid.
+
+Finally, the \fIresult\fP argument is a linked list (via \fIai_next\fP) of
+address records, one per address.  All members except \fIai_flags\fP will
+be valid.  Note that \fIai_canonname\fP is only valid in the first (head)
+list item.  The \fIresult\fP returned in the callback is owned by c-ares and
+will be freed when the callback returns.  If your code long-jumps away without
+giving c-ares a chance to clean up the data, your program will most likely
+leak heap memory.
+
+.SS Errors
+The following errors may be returned in \fIstatus\fP:
+.TP
+.B ARES_ENOMEM
+Some memory allocation has failed.
+.TP
+.B ARES_EBADNAME
+Failed to get canonical name.
+.TP
+.B ARES_EBADQUERY
+Overflow in numeric service name (maximum is 65,535) or
+\fIchannel\fP was NULL.
+.TP
+.B ARES_EBADFAMILY
+The \fIhints.ai_family\fP member was not recognized or
+failed to select good values for \fIai_socktype\fP or \fIai_protocol\fP.
+.TP
+.B ARES_EBADHINTS
+Failed to look up protocol number.
+.TP
+.B ARES_ENONAME
+Failed to look up service name. Also, if either of \fBARES_AI_NUMERICHOST\fP
+and \fBARES_AI_NUMERICSERV\fP is set, but the corresponding name could
+not be interpreted as a number, or both \fInodename\fP and \fIservicename\fP
+were NULL.
+.TP
+.B ARES_EFORMERR
+An internal bug in
+.BR ares_getaddrinfo ()
+caused resolution to fail.
+.TP
+.B ARES_EBADFLAGS
+If \fInodename\fP was NULL, but \fBARES_AI_CANONNAME\fP was specified.
+If \fBARES_AI_ALL\fP was given, but not \fBARES_AI_V4MAPPED\fP.
+.PP
+In addition, any error
+.BR ares_gethostbyname ()
+may return, this function
+will pass on.
+
+.SH CONFORMING TO
+The interface implemented in c-ares is compliant with RFC 2553, section 6.2,
+with the following notable exceptions:
+
+.IP * 2
+The
+.B ARES_AI_ADDRCONFIG
+flag of
+.I hints.ai_flags
+is ignored.
+.IP *
+No sorting of the resulting addresses is performed.
+
+.PP
+Unlike the GNU implementation of
+.BR getaddrinfo (),
+c-ares does not include all available protocols and socket types when
+.I hints.ai_socktype
+and/or
+.I hints.ai_protocol
+are zero.  Rather, it chooses a single socket type and/or protocol and uses
+fills in the result. It prefers \fBSOCK_STREAM\fP and \fBIPPROTO_TCP\fP when
+no socket type hints are given. Default for \fIai_protocol\fP, given an
+explicit socket type, is reasonably chosen among
+.IP * 2
+.B IPPROTO_RAW
+.IP *
+.B IPPROTO_TCP
+.IP *
+.B IPPROTO_UDP
+.IP *
+.B IPPROTO_SCTP
+
+.SH EXAMPLE
+This is a basic example showing how to extract information from the results
+of
+.BR ares_getaddrinfo ().
+Note that error checks are missing in the code to keep it brief.  When using
+c-ares for real, be sure to validate function results where appropriate.
+
+.in +2
+.nf
+.\" BEGIN EXAMPLE ares_getaddrinfo_example.c
+#include <stdio.h>
+#include <arpa/inet.h>
+#include <ares.h>
+
+static int done;
+
+static void callback(void *arg,
+                     int status, int timeouts,
+                     struct ares_addrinfo *result)
+{
+  done = 1;
+
+  for (; result; result = result->ai_next) {
+    char addrbuf[128];
+
+    switch (result->ai_family) {
+    case AF_INET:  printf("INET  "); break;
+    case AF_INET6: printf("INET6 "); break;
+    default: printf("%d ", result->ai_family); break;
+    }
+
+    switch (result->ai_socktype) {
+    case SOCK_STREAM:    printf("STREAM "); break;
+    case SOCK_DGRAM:     printf("DGRAM "); break;
+    case SOCK_RAW:       printf("RAW "); break;
+    case SOCK_SEQPACKET: printf("SEQPACKET "); break;
+    default: printf("%d ", result->ai_socktype); break;
+    }
+
+    switch (result->ai_protocol) {
+    case IPPROTO_TCP:  printf("TCP: "); break;
+    case IPPROTO_UDP:  printf("UDP: "); break;
+    case IPPROTO_RAW:  printf("RAW: "); break;
+    case IPPROTO_SCTP: printf("SCTP: "); break;
+    default: printf("%d: ", result->ai_protocol); break;
+    }
+
+    if (result->ai_flags & ARES_AI_PASSIVE)
+      printf("bind ");
+    else
+      printf("connect ");
+
+    switch (result->ai_family) {
+    case AF_INET:
+      printf("%s\\n",
+             inet_ntop(AF_INET,
+                       &((struct sockaddr_in*) result->ai_addr)->sin_addr,
+                       addrbuf,
+                       sizeof(addrbuf)));
+      break;
+    case AF_INET6:
+      printf("%s\\n",
+             inet_ntop(AF_INET6,
+                       &((struct sockaddr_in6*) result->ai_addr)->sin6_addr,
+                       addrbuf,
+                       sizeof(addrbuf)));
+      break;
+    default:
+      printf("%d bytes\\n", result->ai_addrlen);
+    }
+  }
+}
+
+int main()
+{
+  ares_channel channel;
+
+  (void) ares_init(&channel);
+  ares_getaddrinfo(channel, "localhost", "http", NULL, callback, NULL);
+
+  while (!done) {
+    fd_set readers, writers;
+    struct timeval tv, *tvp;
+    int nfds;
+
+    FD_ZERO(&readers);
+    FD_ZERO(&writers);
+    nfds = ares_fds(channel, &readers, &writers);
+    tvp = ares_timeout(channel, NULL, &tv);
+    select(nfds, &readers, &writers, NULL, tvp);
+    ares_process(channel, &readers, &writers);
+  }
+
+  ares_destroy(channel);
+
+  return 0;
+}
+.\" END EXAMPLE
+.fi
+
+.SH SEE ALSO
+.BR ares_init (3),
+.BR ares_getnameinfo (3),
+.BR ares_process (3),
+RFC 2553, RFC 3484
+
+.SH AUTHOR
+Tommie Gannert
+.br
+Copyright 2010 by Tommie Gannert.
